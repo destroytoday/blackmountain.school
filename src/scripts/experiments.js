@@ -3,7 +3,10 @@ import * as THREE from "three";
 /* Black Mountain School — eight client-rendered studies.
    Library: Three.js r170 (MIT). Font: Libre Caslon Text Bold (SIL Open Font License 1.1).
    Every page load starts with Infinite Press. Tap or click anywhere for another.
-   Keys: Space / Enter / R choose another; arrows and 1–8 also select.
+   Scroll to spin the type ring. Drag to draw (see marker.js).
+   Keys: Space advances; Enter / R choose another at random; arrows and 1–8
+   also select; T cycles the transition style (sweep, iris, dither, fade);
+   I inverts.
    All art is generated live. The source image is a visual reference, not a texture. */
 const TAU = Math.PI * 2;
 const WHITE = "#f8f8f4",
@@ -12,10 +15,44 @@ const TEXT = "BLACK MOUNTAIN N.C. / BLACK MOUNTAIN SCHOOL EST 2026 / ";
 const stage = document.querySelector("[data-motion-experiments]");
 const ink = stage.querySelector("[data-motion-ink]"),
   gpu = stage.querySelector("[data-motion-gpu]"),
-  ctx = ink.getContext("2d");
+  inkCtx = ink.getContext("2d"),
+  buffer = document.createElement("canvas"),
+  bufferCtx = buffer.getContext("2d");
+const HOLD = 3,
+  FADE = 1,
+  SPIN = TAU / 32,
+  KICK = TAU / 6,
+  SPIN_LIMIT = TAU * 2,
+  TRANSITIONS = ["sweep", "iris", "dither", "fade"],
+  SNAPSHOT = -1;
+// 8×8 Bayer matrix, tiled over a coarse grid for the dither transition.
+const BAYER = [
+  0, 32, 8, 40, 2, 34, 10, 42, 48, 16, 56, 24, 50, 18, 58, 26, 12, 44, 4, 36,
+  14, 46, 6, 38, 60, 28, 52, 20, 62, 30, 54, 22, 3, 35, 11, 43, 1, 33, 9, 41,
+  51, 19, 59, 27, 49, 17, 57, 25, 15, 47, 7, 39, 13, 45, 5, 37, 63, 31, 55, 23,
+  61, 29, 53, 21,
+];
+const GRID = 96;
+const mask = document.createElement("canvas");
+mask.width = GRID;
+mask.height = GRID;
+const snapshot = document.createElement("canvas"),
+  snapshotCtx = snapshot.getContext("2d");
+const maskCtx = mask.getContext("2d"),
+  maskData = maskCtx.createImageData(GRID, GRID);
+let ctx = inkCtx;
 let size = 960,
   current = 0;
 let clock = 0,
+  ringClock = 0,
+  ringAngle = -2.25,
+  spinBoost = 0,
+  sweepStart = 0,
+  transition = 0,
+  outgoing = null,
+  outgoingClock = 0,
+  fadeClock = 0,
+  autoplay = false, // Auto-advance through the studies every HOLD seconds.
   previous = performance.now(),
   initialized = false,
   renderer = null,
@@ -24,6 +61,7 @@ let scene, camera, shaderScene, shaderCamera, shaderMat, sculptureA, sculptureB;
 let glyphs = [];
 const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
 const mod = (x, n) => ((x % n) + n) % n;
+const smooth = (x) => x * x * (3 - 2 * x);
 function circle(x, y, r, color) {
   ctx.fillStyle = color;
   ctx.beginPath();
@@ -43,19 +81,24 @@ function setFont() {
     return v;
   });
 }
-function typeRing(time, mode = 0) {
+function ringOffset(mode, a, time) {
+  if (mode === 2) return Math.sin(a * 3 - (time * TAU) / 8) * size * 0.007;
+  if (mode === 1) return Math.sin((time * TAU) / 12) * size * 0.004;
+  return 0;
+}
+function typeRing(time, spin, from = 0, to = from, p = 1) {
   ctx.save();
   ctx.translate(size / 2, size / 2);
   ctx.fillStyle = WHITE;
   ctx.font = `700 ${size * 0.054}px Seal, 'Times New Roman', serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "alphabetic";
-  const spin = (time * TAU) / 32 - 2.25;
   for (const g of glyphs) {
     const a = g.angle + spin;
-    let r = size * 0.365;
-    if (mode === 2) r += Math.sin(a * 3 - (time * TAU) / 8) * size * 0.007;
-    if (mode === 1) r += Math.sin((time * TAU) / 12) * size * 0.004;
+    const r =
+      size * 0.365 +
+      ringOffset(from, a, time) * (1 - p) +
+      ringOffset(to, a, time) * p;
     ctx.save();
     ctx.rotate(a);
     ctx.translate(0, -r);
@@ -263,6 +306,7 @@ function initGPU() {
       event.preventDefault();
       glAvailable = false;
       if (current >= 4) select(0);
+      if (outgoing >= 4) outgoing = null;
     });
   } catch (error) {
     glAvailable = false;
@@ -306,17 +350,73 @@ function renderGPU(t, mode) {
   }
   renderer.render(scene, camera);
 }
-function render(t = clock, index = current) {
-  ctx.clearRect(0, 0, size, size);
-  const useGPU = index >= 4 && glAvailable;
-  gpu.style.visibility = useGPU ? "visible" : "hidden";
-  if (useGPU) renderGPU(t, index);
-  else {
-    ctx.fillStyle = BLACK;
-    ctx.fillRect(0, 0, size, size);
-    [aperture, eccentric, elastic, spiral][index % 4](t);
+// Draws one study into a 2D context; GPU studies are copied off the WebGL canvas.
+// SNAPSHOT is a frozen frame of an interrupted transition.
+function drawArt(target, index, t) {
+  if (index === SNAPSHOT) {
+    if (target !== snapshotCtx) target.drawImage(snapshot, 0, 0);
+    return;
   }
-  typeRing(t, index);
+  ctx = target;
+  ctx.fillStyle = BLACK;
+  ctx.fillRect(0, 0, size, size);
+  if (index >= 4 && glAvailable) {
+    renderGPU(t, index);
+    ctx.drawImage(gpu, 0, 0, size, size);
+  } else [aperture, eccentric, elastic, spiral][index % 4](t);
+  ctx = inkCtx;
+}
+// Cuts the incoming study in the buffer down to the part revealed at progress p.
+function maskIncoming(p) {
+  const style = TRANSITIONS[transition];
+  if (style === "fade") return p;
+  bufferCtx.save();
+  bufferCtx.globalCompositeOperation = "destination-in";
+  if (style === "iris") {
+    const feather = size * 0.02,
+      r = p * (size * 0.33 + feather);
+    const g = bufferCtx.createRadialGradient(
+      size / 2,
+      size / 2,
+      Math.max(0, r - feather),
+      size / 2,
+      size / 2,
+      Math.max(0.01, r),
+    );
+    g.addColorStop(0, BLACK);
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    bufferCtx.fillStyle = g;
+    bufferCtx.fillRect(0, 0, size, size);
+  } else if (style === "sweep") {
+    const start = sweepStart - Math.PI / 2;
+    bufferCtx.beginPath();
+    bufferCtx.moveTo(size / 2, size / 2);
+    bufferCtx.arc(size / 2, size / 2, size, start, start + p * TAU);
+    bufferCtx.closePath();
+    bufferCtx.fill();
+  } else {
+    const level = p * 64;
+    for (let y = 0; y < GRID; y++)
+      for (let x = 0; x < GRID; x++)
+        maskData.data[(y * GRID + x) * 4 + 3] =
+          BAYER[(y % 8) * 8 + (x % 8)] < level ? 255 : 0;
+    maskCtx.putImageData(maskData, 0, 0);
+    bufferCtx.imageSmoothingEnabled = false;
+    bufferCtx.drawImage(mask, 0, 0, size, size);
+  }
+  bufferCtx.restore();
+  return 1;
+}
+function render() {
+  const p = outgoing === null ? 1 : smooth(clamp(fadeClock / FADE));
+  if (p < 1) {
+    drawArt(inkCtx, outgoing, outgoingClock);
+    drawArt(bufferCtx, current, clock);
+    inkCtx.globalAlpha = maskIncoming(p);
+    inkCtx.drawImage(buffer, 0, 0);
+    inkCtx.globalAlpha = 1;
+  } else drawArt(inkCtx, current, clock);
+  typeRing(ringClock, ringAngle, outgoing ?? current, current, p);
 }
 function resize(forced) {
   const rect = stage.querySelector("[data-motion-art]").getBoundingClientRect();
@@ -326,6 +426,10 @@ function resize(forced) {
   size = Math.max(64, size);
   ink.width = size;
   ink.height = size;
+  buffer.width = size;
+  buffer.height = size;
+  snapshot.width = size;
+  snapshot.height = size;
   if (renderer) {
     renderer.setSize(size, size, false);
     shaderMat.uniforms.uSize.value = size;
@@ -342,35 +446,88 @@ function randomIndex(except) {
   crypto.getRandomValues(bytes);
   return candidates[bytes[0] % candidates.length];
 }
-function select(index, reset = true) {
-  current = mod(index, glAvailable ? 8 : 4);
-  if (reset) clock = 0;
+function select(index) {
+  index = mod(index, glAvailable ? 8 : 4);
+  if (index === current) return;
+  if (outgoing === null) {
+    outgoing = current;
+    outgoingClock = clock;
+  } else {
+    // Interrupted mid-transition: freeze the blend so nothing pops.
+    drawArt(snapshotCtx, outgoing, outgoingClock);
+    drawArt(bufferCtx, current, clock);
+    snapshotCtx.globalAlpha = maskIncoming(smooth(clamp(fadeClock / FADE)));
+    snapshotCtx.drawImage(buffer, 0, 0);
+    snapshotCtx.globalAlpha = 1;
+    outgoing = SNAPSHOT;
+  }
+  fadeClock = 0;
+  sweepStart = ringAngle;
+  spinBoost = Math.min(SPIN_LIMIT, spinBoost + KICK);
+  current = index;
+  clock = 0;
   render();
+}
+function choose(index) {
+  autoplay = false;
+  select(index);
 }
 await document.fonts.load("700 50px Seal").catch(() => {});
 resize();
 initGPU();
+gpu.style.visibility = "hidden";
 initialized = true;
-select(0);
+render();
 window.addEventListener("resize", () => resize());
 window.visualViewport?.addEventListener("resize", () => resize());
-stage.addEventListener("click", () => select(randomIndex(current)));
-stage.addEventListener("keydown", (event) => {
+stage.addEventListener("click", () => choose(randomIndex(current)));
+window.addEventListener("keydown", (event) => {
   if (event.ctrlKey || event.metaKey || event.altKey) return;
   const key = event.key.toLowerCase();
-  if (key === " " || key === "enter" || key === "r") {
+  if (key === " ") {
     event.preventDefault();
-    select(randomIndex(current));
+    choose(current + 1);
   }
-  if (key === "arrowright") select(current + 1);
-  if (key === "arrowleft") select(current - 1);
-  if (/^[1-8]$/.test(key)) select(Number(key) - 1);
+  if (key === "i") stage.classList.toggle("is-inverted");
+  if (key === "enter" || key === "r") {
+    event.preventDefault();
+    choose(randomIndex(current));
+  }
+  if (key === "arrowright") choose(current + 1);
+  if (key === "arrowleft") choose(current - 1);
+  if (/^[1-8]$/.test(key)) choose(Number(key) - 1);
+  if (key === "t") {
+    transition = mod(transition + 1, TRANSITIONS.length);
+    select(current + 1);
+  }
 });
+// Scrolling down spins the ring clockwise, up spins it back.
+function spinBy(pixels) {
+  spinBoost = clamp(spinBoost + pixels * 0.004, -SPIN_LIMIT, SPIN_LIMIT);
+}
+window.addEventListener(
+  "wheel",
+  (event) => {
+    event.preventDefault();
+    spinBy(event.deltaY * (event.deltaMode === 1 ? 16 : 1));
+  },
+  { passive: false },
+);
+
 function tick(now) {
   const dt = Math.min((now - previous) / 1000, 0.05);
   previous = now;
   if (!document.hidden) {
     clock += dt;
+    ringClock += dt;
+    ringAngle += (SPIN + spinBoost) * dt;
+    spinBoost *= Math.exp(-dt * 2);
+    if (outgoing !== null) {
+      outgoingClock += dt;
+      fadeClock += dt;
+      if (fadeClock >= FADE) outgoing = null;
+    }
+    if (autoplay && clock >= HOLD) select(current + 1);
     render();
   }
   requestAnimationFrame(tick);
