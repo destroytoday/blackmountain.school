@@ -1,9 +1,17 @@
 ---
 import BaseLayout from "../layouts/BaseLayout.astro";
+import Hero from "@/components/Hero.astro";
 ---
 
 <BaseLayout>
-  <main>
-    <h1>Black Mountain School</h1>
+  <main class="Homepage__main">
+    <Hero />
   </main>
 </BaseLayout>
+
+<style lang="scss" scoped>
+  .Homepage__main {
+    position: absolute;
+    inset: 0;
+  }
+</style>

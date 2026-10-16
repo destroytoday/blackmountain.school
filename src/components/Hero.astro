@@ -1,0 +1,51 @@
+---
+import { Image } from "astro:assets";
+import nickImage from "@/assets/images/nick.jpg"
+---
+<section class="Hero">
+  <Image
+    class="Hero__image"
+    src={nickImage}
+    alt="Nick Jones"
+    width={nickImage.width}
+    height={nickImage.height}
+  />
+  <div class="Hero__header">
+    <h1>Black Mountain School</h1>
+    <h2>Nick Jones</h2>
+    <h3>Organizer</h3>
+  </div>
+</section>
+
+<style lang="scss" scoped>
+.Hero {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(375px, 1fr));
+  height: 100%;
+  overflow: hidden;
+}
+
+.Hero__image {
+  height: 100%;
+  object-fit: cover;
+}
+
+.Hero__header {
+  padding: 2rem;
+
+  h1 {
+    font-size: 1.75rem;
+    margin-bottom: 1rem;
+  }
+
+  h2 {
+    font-size: 1.25rem;
+    font-weight: normal;
+  }
+
+  h3 {
+    font-size: 0.875rem;
+    font-weight: normal;
+  }
+}
+</style>
