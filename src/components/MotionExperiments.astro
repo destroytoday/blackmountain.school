@@ -1,0 +1,66 @@
+<section
+  class="MotionExperiments"
+  data-motion-experiments
+  role="button"
+  tabindex="0"
+  aria-label="Black Mountain School animation. Tap or press Enter for another."
+>
+  <div class="MotionExperiments__art" data-motion-art>
+    <canvas
+      class="MotionExperiments__canvas"
+      data-motion-gpu
+      aria-hidden="true"
+    ></canvas>
+    <canvas
+      class="MotionExperiments__canvas"
+      data-motion-ink
+      aria-hidden="true"
+    ></canvas>
+  </div>
+</section>
+
+<script src="../scripts/experiments.js"></script>
+
+<style lang="scss" scoped>
+  @font-face {
+    font-family: Seal;
+    src: url("../assets/fonts/seal.woff2") format("woff2");
+    font-weight: 700;
+    font-display: block;
+  }
+
+  :global(html),
+  :global(body) {
+    background: #000;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  .MotionExperiments {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    outline: none;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .MotionExperiments__art {
+    position: relative;
+    width: min(100vw, 100vh);
+    height: min(100vw, 100vh);
+    width: min(100vw, 100dvh);
+    height: min(100vw, 100dvh);
+  }
+
+  .MotionExperiments__canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+</style>
