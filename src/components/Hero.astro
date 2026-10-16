@@ -7,8 +7,11 @@ import nickImage from "@/assets/images/nick.jpg"
     class="Hero__image"
     src={nickImage}
     alt="Nick Jones"
-    width={nickImage.width}
-    height={nickImage.height}
+    width={1280}
+    height={1280}
+    widths={[750, 828, 1080, 1280, 1500, 1920, 2560]}
+    sizes="(width >= 750px) 50vw, 100vw"
+    priority
   />
   <div class="Hero__header">
     <h1>Black Mountain School</h1>
