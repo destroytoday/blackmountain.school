@@ -33,6 +33,12 @@ const trail = await Promise.all(
       data-motion-ink
       aria-hidden="true"
     ></canvas>
+    <canvas
+      class="MotionExperiments__canvas"
+      data-motion-xerox
+      aria-hidden="true"
+      style="visibility: hidden"
+    ></canvas>
   </div>
   <div
     class="MotionExperiments__trail"
@@ -52,8 +58,8 @@ const trail = await Promise.all(
 
 <style lang="scss" scoped>
   @font-face {
-    font-family: Seal;
-    src: url("../assets/fonts/seal.woff2") format("woff2");
+    font-family: Bodoni;
+    src: url("../assets/fonts/bodoni-moda-seal.woff2") format("woff2");
     font-weight: 700;
     font-display: block;
   }
