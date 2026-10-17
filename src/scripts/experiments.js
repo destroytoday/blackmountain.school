@@ -1,18 +1,32 @@
 import * as THREE from "three";
+import { createXerox } from "./xerox.js";
 
 /* Black Mountain School — eight client-rendered studies.
-   Library: Three.js r170 (MIT). Font: Libre Caslon Text Bold (SIL Open Font License 1.1).
+   Library: Three.js r170 (MIT). Font: Bodoni Moda Black at its 6pt optical size
+   (SIL Open Font License 1.1).
    Every page load starts with Infinite Press. Tap or click anywhere for another.
    Scroll to spin the type ring. Drag to draw (see marker.js).
    Keys: Space advances; Enter / R choose another at random; arrows and 1–8
    also select; T cycles the transition style (sweep, iris, dither, fade);
    I inverts; P toggles the image trail (see trail.js).
+   Everything is drawn through a hand-inked, scanned look (see xerox.js).
    All art is generated live. The source image is a visual reference, not a texture. */
 const TAU = Math.PI * 2;
 const WHITE = "#f8f8f4",
   BLACK = "#000000";
-const TEXT = "BLACK MOUNTAIN N.C. / BLACK MOUNTAIN SCHOOL EST 2026 / ";
+const TEXT = "BLACK MOUNTAIN N.C.   BLACK MOUNTAIN SCHOOL EST 2026   ";
+// The type is set big, condensed and ink-spread to echo Albers' BMC seal.
+// INK thickens strokes like letterpress (fraction of size); ART_SCALE enlarges
+// the studies so they hug the type like the seal's black ring.
+const FONT_SCALE = 0.086,
+  CONDENSE = 0.72,
+  INK = 0.0018,
+  ART_SCALE = 1.11;
+const fontSpec = () =>
+  `700 ${size * FONT_SCALE}px Bodoni, 'Times New Roman', serif`;
 const stage = document.querySelector("[data-motion-experiments]");
+const xeroxCanvas = stage.querySelector("[data-motion-xerox]");
+let xerox = null;
 const ink = stage.querySelector("[data-motion-ink]"),
   gpu = stage.querySelector("[data-motion-gpu]"),
   inkCtx = ink.getContext("2d"),
@@ -69,8 +83,8 @@ function circle(x, y, r, color) {
   ctx.fill();
 }
 function setFont() {
-  ctx.font = `700 ${size * 0.054}px Seal, 'Times New Roman', serif`;
-  const widths = [...TEXT].map((c) => ctx.measureText(c).width);
+  ctx.font = fontSpec();
+  const widths = [...TEXT].map((c) => ctx.measureText(c).width * CONDENSE);
   const total = widths.reduce((a, b) => a + b, 0),
     spacing = (TAU * size * 0.365 - total) / TEXT.length;
   let offset = 0;
@@ -90,7 +104,10 @@ function typeRing(time, spin, from = 0, to = from, p = 1) {
   ctx.save();
   ctx.translate(size / 2, size / 2);
   ctx.fillStyle = WHITE;
-  ctx.font = `700 ${size * 0.054}px Seal, 'Times New Roman', serif`;
+  ctx.strokeStyle = WHITE;
+  ctx.lineJoin = "round";
+  ctx.lineWidth = size * INK;
+  ctx.font = fontSpec();
   ctx.textAlign = "center";
   ctx.textBaseline = "alphabetic";
   for (const g of glyphs) {
@@ -102,7 +119,9 @@ function typeRing(time, spin, from = 0, to = from, p = 1) {
     ctx.save();
     ctx.rotate(a);
     ctx.translate(0, -r);
+    ctx.scale(CONDENSE, 1);
     ctx.fillText(g.char, 0, 0);
+    ctx.strokeText(g.char, 0, 0);
     ctx.restore();
   }
   ctx.restore();
@@ -360,10 +379,15 @@ function drawArt(target, index, t) {
   ctx = target;
   ctx.fillStyle = BLACK;
   ctx.fillRect(0, 0, size, size);
+  ctx.save();
+  ctx.translate(size / 2, size / 2);
+  ctx.scale(ART_SCALE, ART_SCALE);
+  ctx.translate(-size / 2, -size / 2);
   if (index >= 4 && glAvailable) {
     renderGPU(t, index);
     ctx.drawImage(gpu, 0, 0, size, size);
   } else [aperture, eccentric, elastic, spiral][index % 4](t);
+  ctx.restore();
   ctx = inkCtx;
 }
 // Cuts the incoming study in the buffer down to the part revealed at progress p.
@@ -374,7 +398,7 @@ function maskIncoming(p) {
   bufferCtx.globalCompositeOperation = "destination-in";
   if (style === "iris") {
     const feather = size * 0.02,
-      r = p * (size * 0.33 + feather);
+      r = p * (size * 0.33 * ART_SCALE + feather);
     const g = bufferCtx.createRadialGradient(
       size / 2,
       size / 2,
@@ -417,6 +441,14 @@ function render() {
     inkCtx.globalAlpha = 1;
   } else drawArt(inkCtx, current, clock);
   typeRing(ringClock, ringAngle, outgoing ?? current, current, p);
+  xerox?.render(ink);
+}
+// Shows the inked version instead of the raw canvas when WebGL allows it.
+function initXerox() {
+  xerox = createXerox(xeroxCanvas);
+  if (!xerox) return;
+  ink.style.visibility = "hidden";
+  xeroxCanvas.style.visibility = "visible";
 }
 function resize(forced) {
   const rect = stage.querySelector("[data-motion-art]").getBoundingClientRect();
@@ -472,9 +504,10 @@ function choose(index) {
   autoplay = false;
   select(index);
 }
-await document.fonts.load("700 50px Seal").catch(() => {});
+await document.fonts.load("700 50px Bodoni").catch(() => {});
 resize();
 initGPU();
+initXerox();
 gpu.style.visibility = "hidden";
 initialized = true;
 render();
