@@ -6,7 +6,7 @@ import * as THREE from "three";
    Scroll to spin the type ring. Drag to draw (see marker.js).
    Keys: Space advances; Enter / R choose another at random; arrows and 1–8
    also select; T cycles the transition style (sweep, iris, dither, fade);
-   I inverts.
+   I inverts; P toggles the image trail (see trail.js).
    All art is generated live. The source image is a visual reference, not a texture. */
 const TAU = Math.PI * 2;
 const WHITE = "#f8f8f4",
