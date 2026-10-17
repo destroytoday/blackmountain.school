@@ -1,3 +1,20 @@
+---
+import type { ImageMetadata } from "astro";
+import { getImage } from "astro:assets";
+
+// Black Mountain College photos for the image trail (P), served small.
+const photos = import.meta.glob<{ default: ImageMetadata }>(
+  "../assets/trail/*.jpg",
+  { eager: true },
+);
+const trail = await Promise.all(
+  Object.values(photos).map(async ({ default: src }) => {
+    const image = await getImage({ src, width: 480, format: "webp" });
+    return { src: image.src, ratio: src.width / src.height };
+  }),
+);
+---
+
 <section
   class="MotionExperiments"
   data-motion-experiments
@@ -17,6 +34,11 @@
       aria-hidden="true"
     ></canvas>
   </div>
+  <div
+    class="MotionExperiments__trail"
+    data-trail={JSON.stringify(trail)}
+    aria-hidden="true"
+  ></div>
   <canvas
     class="MotionExperiments__marker"
     data-marker
@@ -26,6 +48,7 @@
 
 <script src="../scripts/experiments.js"></script>
 <script src="../scripts/marker.js"></script>
+<script src="../scripts/trail.js"></script>
 
 <style lang="scss" scoped>
   @font-face {
@@ -66,6 +89,24 @@
     height: min(100vw, 100vh);
     width: min(100vw, 100dvh);
     height: min(100vw, 100dvh);
+  }
+
+  .MotionExperiments__trail {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+
+    :global(img) {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: clamp(140px, 22vmin, 280px);
+      height: auto;
+      max-width: none;
+      opacity: 0;
+      will-change: transform, opacity;
+    }
   }
 
   .MotionExperiments__marker {

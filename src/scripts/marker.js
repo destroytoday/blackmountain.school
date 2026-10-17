@@ -14,6 +14,7 @@ function resize() {
   const width = Math.round(innerWidth * dpr),
     height = Math.round(innerHeight * dpr);
   if (canvas.width === width && canvas.height === height) return;
+  if (!width || !height) return;
   // Keep existing marks across resizes.
   const old = document.createElement("canvas");
   old.width = canvas.width;
@@ -21,7 +22,7 @@ function resize() {
   old.getContext("2d").drawImage(canvas, 0, 0);
   canvas.width = width;
   canvas.height = height;
-  ctx.drawImage(old, 0, 0);
+  if (old.width && old.height) ctx.drawImage(old, 0, 0);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
