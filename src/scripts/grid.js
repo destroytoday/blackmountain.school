@@ -19,7 +19,9 @@ const MIN_SPAN = 3,
   // Decoded photos kept in memory; the least recently drawn are released
   MAX_CACHED = 16,
   // Higher pixel densities cost memory without visibly sharper photos
-  MAX_DPR = 2;
+  MAX_DPR = 2,
+  // Slide-up of the first photo on load
+  SLIDE_MS = 900;
 const randomInt = (min, max) =>
   min + Math.floor(Math.random() * (max - min + 1));
 
@@ -128,6 +130,19 @@ function sourceFor(photo, width, dpr) {
   ).url;
 }
 
+// The first photo slides up from just below the screen once it's ready.
+// Returns how far below its place to draw it, and keeps drawing until it
+// lands.
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let slideStart = null;
+function slideOffset(top, height) {
+  slideStart ??= performance.now();
+  const t = Math.min(1, (performance.now() - slideStart) / SLIDE_MS);
+  if (t < 1) requestDraw();
+  // Ease out (cubic)
+  return (1 - t) ** 3 * Math.max(0, height - top);
+}
+
 let drawFrame = 0;
 const requestDraw = () => (drawFrame ||= requestAnimationFrame(draw));
 
@@ -173,15 +188,16 @@ function draw() {
     const { photo, cols } = placement;
     const stick = start + i * step;
     const x = (placement.column - 1) * column;
-    const top = Math.max(0, stick - y) + (placement.row - 1) * row;
     const w = cols * column,
       h = (w * photo.height) / photo.width;
+    const { img, ready } = use(sourceFor(photo, w, dpr));
+    let top = Math.max(0, stick - y) + (placement.row - 1) * row;
+    if (i === 0 && ready && !reduceMotion) top += slideOffset(top, height);
     // Only the photo fades; its backing stays opaque so it fades to the
     // background instead of mixing with the photos stacked beneath
     ctx.globalAlpha = 1;
     ctx.fillStyle = background;
     ctx.fillRect(x, top, w, h);
-    const { img, ready } = use(sourceFor(photo, w, dpr));
     if (ready) {
       ctx.globalAlpha = Math.min(1, Math.max(0, 1 - (y - stick) / distance));
       ctx.drawImage(img, x, top, w, h);
