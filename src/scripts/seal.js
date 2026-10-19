@@ -79,3 +79,6 @@ for (const { text, radius, center, flip, kern = {} } of LINES) {
     group.append(glyph);
   });
 }
+
+// Fades the seal in once its glyphs are laid out in the loaded font
+seal.dataset.ready = "";

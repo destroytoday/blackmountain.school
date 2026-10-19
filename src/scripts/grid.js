@@ -99,13 +99,16 @@ function use(url) {
     img.src = url;
     entry = { img, ready: false };
     const loaded = entry;
-    img
-      .decode()
-      .then(() => {
-        loaded.ready = true;
-        requestDraw();
-      })
-      .catch(() => {});
+    const ready = () => {
+      loaded.ready = true;
+      requestDraw();
+    };
+    // Safari can reject decode() for images still downloading (so, on a
+    // first visit), so fall back to the load event
+    img.decode().then(ready, () => {
+      if (img.complete && img.naturalWidth) ready();
+      else img.addEventListener("load", ready, { once: true });
+    });
   }
   cache.set(url, entry);
   for (const [oldUrl, old] of cache) {
@@ -182,6 +185,8 @@ function draw() {
     if (ready) {
       ctx.globalAlpha = Math.min(1, Math.max(0, 1 - (y - stick) / distance));
       ctx.drawImage(img, x, top, w, h);
+      // Fades the canvas in once it has a photo to show
+      canvas.dataset.ready ??= "";
     }
   }
 
